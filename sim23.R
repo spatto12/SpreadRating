@@ -178,3 +178,78 @@ schedule1 <- schedule |>
                             ifelse(predict>spread_line & spread_line<0, "UNDERDOG", 
                                    ifelse(predict<spread_line & spread_line>0, "UNDERDOG", "FAVORITE"))))
 
+#Week 2 Predictions
+szn1 <- szn23 |>
+  select(season, week, team, rating) |>
+  arrange(-rating) |>
+  group_by(week) |>
+  mutate(rank = as.numeric(row_number())) |>
+  ungroup() |>
+  arrange(week) |>
+  group_by(team) |>
+  mutate(dif_rank = lag(rank) - rank) |>
+  ungroup() |>
+  filter(week==2) |>
+  select(rank, dif_rank, team, rating)
+
+nfl1 <- szn1 |>
+  slice(1:16) |>
+  mutate(ID = row_number())
+
+nfl2 <- szn1 |>
+  slice(17:32) |>
+  rename(rank2 = rank, dif_rank2 = dif_rank, team2 = team, rating2 = rating) |>
+  mutate(ID = row_number())
+
+wk0 <- merge(nfl1, nfl2, by = c('ID'))
+
+rm(nfl1, nfl2)
+
+wk0 <- wk0 |>
+  select(-c(ID))
+
+library(gt)
+library(gtExtras)
+library(nflplotR)
+
+wk0 |>
+  gt::gt() |>
+  tab_header(title = md("**NFL Team Ratings going into Week 2**"),
+             subtitle = "Team, quarterback and health factors are considered") |>
+  cols_label(
+    rank = md(""),
+    team = md("**Team**"),
+    dif_rank = md("**Change**"),
+    rating = md("**Overall**"),
+    rank2 = md(""),
+    team2 = md("**Team**"),
+    dif_rank2 = md("**Change**"),
+    rating2 = md("**Overall**")
+  ) |>
+  fmt_number(columns = c(rating, rating2), decimals = 2) |>
+  tab_style(style = cell_text(weight = "bold"),locations = cells_body(columns = c(rank, team, dif_rank, rating, rank2, team2, dif_rank2, rating2))) |> 
+  cols_align(align = "center", columns = c(rank, team, dif_rank, rating, rank2, team2, dif_rank2, rating2)) |>
+  tab_style(style = cell_text(font = c(google_font(name = "Karla"), default_fonts()), size = "large"), 
+            locations = cells_title(groups = "title")) |>
+  tab_style(style = cell_text(font = c(google_font(name = "Karla"), default_fonts()), size="small"),
+            locations = list(cells_column_labels(everything()))) |>
+  tab_style(style = cell_text(align = "center", size = "small"), locations = cells_body()) |>
+  tab_style(style = cell_text(font = c(google_font(name = "Times"),
+                                       default_fonts())), locations = cells_body(columns = everything())) |>
+  nflplotR::gt_nfl_wordmarks(columns = gt::starts_with("team")) |>
+  # text_transform(locations = cells_body(c(team, team2)),
+  #                fn = function(x) web_image(url = paste0("https://a.espncdn.com/i/teamlogos/nfl/500/", x, ".png"))) |>
+  cols_width(c(team, team2) ~ px(175)) |>
+  cols_width(c(rank, rank2) ~ px(45)) |>
+  tab_style(style = list(cell_borders(sides = "bottom", color = "black", weight = px(3))),
+            locations = list(cells_column_labels(columns = everything()))) |>
+  tab_options(data_row.padding = px(0.5)) |>
+  gt::data_color(columns = c(rating, rating2),
+                 colors = scales::col_numeric(palette = viridis::viridis(10, direction = -1, option ="D"),
+                                              domain = c(10, -10)), alpha = 0.8) |>
+  gt_fa_rank_change(column = dif_rank, font_color = "match") |>
+  gt_fa_rank_change(column = dif_rank2, font_color = "match") |>
+  tab_source_note(source_note = md("**Data**: @SICscore & @FiveThirtyEight | **Table**: @PattonAnalytics")) |>
+  tab_options(data_row.padding = px(0.5), source_notes.font.size = 10) |>
+  gtsave(filename = "Homefield/wk1_rating.png")
+  
