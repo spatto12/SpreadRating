@@ -47,9 +47,10 @@ epa <- home |>
   ungroup() |>
   mutate(team_grade = (current_epa - mean(current_epa))/sd(current_epa),
          game_date = as.Date(game_date)) |>
-  filter(week!=2) |>
+  # filter(week!=2) |>
   group_by(team1) |>
-  slice(n() - 1, n()) |>  ungroup() |>
+  slice(n() - 2, n() - 1, n()) |>  ungroup() |>
+  filter(week!=2, week!=17) |>
   mutate(season = ifelse(season==2022, 2023, 2023),
          week = ifelse(week==1, 2, 1),
          team_grade = ifelse(week==1, team_grade/3, team_grade)) |>
