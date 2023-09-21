@@ -50,9 +50,10 @@ epa <- home |>
   # filter(week!=2) |>
   group_by(team1) |>
   slice(n() - 2, n() - 1, n()) |>  ungroup() |>
-  filter(week!=2, week!=17) |>
+  filter(week!=17) |>
   mutate(season = ifelse(season==2022, 2023, 2023),
-         week = ifelse(week==1, 2, 1),
+         week = ifelse(week==1, 2, 
+                       ifelse(week==2, 3, 1)),
          team_grade = ifelse(week==1, team_grade/3, team_grade)) |>
   select(season, week, team = team1, team_grade)
 
@@ -76,20 +77,22 @@ qb0 <- qb1 |>
   rbind(qb2) |>
   mutate(qb_grade = (qb1_value_pre - mean(qb1_value_pre))/sd(qb1_value_pre)) |>
   filter(date > "2023-09-06") |>
-  mutate(week = ifelse(date > "2023-09-13", 2, 1)) |>
+  mutate(week = ifelse(date > "2023-09-20", 3, 
+                       ifelse(date > "2023-09-13", 2, 1))) |>
   select(season, week, team = team1, qb_grade)
 
 #Health Data
 health21_22 <- read.csv("Homefield/Automate/health21_22.csv")
 
-health23 <- read.csv("Homefield/Automate/current_SIC.csv")
+health23 <- read.csv("Homefield/Automate/current_SIC.csv") |>
+  select(-c(drop))
 
 health <- health21_22 |>
   rbind(health23) |>
   mutate(health_grade = (SIC - mean(SIC))/sd(SIC)) |>
   arrange(season, week) |>
   group_by(team) |>
-  slice(n() - 1, n()) |>
+  slice(n()-2, n() - 1, n()) |>
   ungroup() |>
   select(season, week, team, health_grade)
 
@@ -107,7 +110,7 @@ szn <- szn23 |>
   
 schedule <- nflreadr::load_schedules(seasons = 2023)
 schedule0 <- schedule |>
-  filter(week %in% c(1:2)) |>
+  filter(week %in% c(1:3)) |>
   select(season, week, home_team, home_score, away_team, away_score, spread_line, home_spread_odds, away_spread_odds) |>
   left_join(szn, by = c("season", "week", "home_team" = "team")) |>
   rename(home_rating = rating, HFA = b_home) |>
@@ -137,7 +140,7 @@ schedule0 <- schedule |>
          ANR = ifelse(is.na(ANR), away_rating, ANR),
          predict2 = HNR - ANR + HFA,
          predict2 = plyr::round_any(predict2, 0.1)) |>
-  filter(week==1) |>
+  filter(week!=3) |>
   select(season, week, home_team, home_score, away_team, away_score, spread_line, home_rating, away_rating, 
          HFA, predict, pd, dif, e_outcome, home_update, away_update, home_mov, away_mov, HNR, ANR) |>
   distinct()
@@ -145,20 +148,22 @@ schedule0 <- schedule |>
 
 #Week 2 Predictions
 home1 <- schedule0 |>
+  filter(week==2) |>
   select(team = home_team, new_rating = HNR)
 
 away1 <- schedule0 |>
+  filter(week==2) |>
   select(team = away_team, new_rating = ANR)
 
 szn0 <- szn |>
-  filter(week==2)
+  filter(week==3)
 
 wk1 <- home1 |>
   rbind(away1) |>
   left_join(szn0, by = c("team")) 
 
 schedule1 <- schedule |>
-  filter(week == 2) |>
+  filter(week == 3) |>
   select(season, week, home_team, home_score, away_team, away_score, spread_line, home_spread_odds, away_spread_odds) |>
   left_join(wk1, by = c("home_team" = "team")) |>
   rename(home_rating = rating, home_rating2 = new_rating, HFA = b_home) |>
@@ -177,7 +182,11 @@ schedule1 <- schedule |>
          dif2 = predict2 - spread_line,
          e_outcome = ifelse(predict>spread_line & spread_line>0, "FAVORITE", 
                             ifelse(predict>spread_line & spread_line<0, "UNDERDOG", 
-                                   ifelse(predict<spread_line & spread_line>0, "UNDERDOG", "FAVORITE"))))
+                                   ifelse(predict<spread_line & spread_line>0, "UNDERDOG", "FAVORITE"))),
+         spread_line = -1 * spread_line,
+         predict = -1 * predict) |>
+  select(-c(home_rating2, away_rating2, predict2, dif2))
+
 
 #Week 2 Predictions
 szn1 <- szn23 |>
@@ -190,7 +199,7 @@ szn1 <- szn23 |>
   group_by(team) |>
   mutate(dif_rank = lag(rank) - rank) |>
   ungroup() |>
-  filter(week==2) |>
+  filter(week==3) |>
   select(rank, dif_rank, team, rating)
 
 nfl1 <- szn1 |>
@@ -215,7 +224,7 @@ library(nflplotR)
 
 wk0 |>
   gt::gt() |>
-  tab_header(title = md("**NFL Team Ratings going into Week 2**"),
+  tab_header(title = md("**NFL Team Ratings going into Week 3**"),
              subtitle = "Team, quarterback and health factors are considered") |>
   cols_label(
     rank = md(""),
@@ -252,5 +261,5 @@ wk0 |>
   gt_fa_rank_change(column = dif_rank2, font_color = "match") |>
   tab_source_note(source_note = md("**Data**: @SICscore & @FiveThirtyEight | **Table**: @PattonAnalytics")) |>
   tab_options(data_row.padding = px(0.5), source_notes.font.size = 10) |>
-  gtsave(filename = "Homefield/wk1_rating.png")
+  gtsave(filename = "Homefield/wk2_rating.png")
   
