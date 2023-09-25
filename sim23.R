@@ -92,7 +92,7 @@ health <- health21_22 |>
   mutate(health_grade = (SIC - mean(SIC))/sd(SIC)) |>
   arrange(season, week) |>
   group_by(team) |>
-  slice(n()-2, n() - 1, n()) |>
+  slice(n() - 2, n() - 1, n()) |>
   ungroup() |>
   select(season, week, team, health_grade)
 
@@ -103,8 +103,7 @@ szn23 <- epa |>
   inner_join(HFA, by = c("team")) |>
   mutate(rating = 4.1*team_grade + 1.04*qb_grade + 1.55*health_grade)
 
-
-#Week 1 Predictions
+#Predictions
 szn <- szn23 |>
   select(season, week, team, b_home, rating)
   
@@ -120,12 +119,6 @@ schedule0 <- schedule |>
   arrange(season, week) |>
   mutate(pd = home_score - away_score,
          win_prob = 1/(1 + 10^(-spread_line/16)),
-         predict = home_rating - away_rating + HFA,
-         predict = plyr::round_any(predict, 0.1),
-         dif = predict - spread_line,
-         e_outcome = ifelse(predict>spread_line & spread_line>0, "FAVORITE", 
-                            ifelse(predict>spread_line & spread_line<0, "UNDERDOG", 
-                                   ifelse(predict<spread_line & spread_line>0, "UNDERDOG", "FAVORITE"))),
          home_update = ifelse(pd>0, 0.8 * (1 - win_prob), 
                               ifelse(pd==0, 0.8 * (0.5 - win_prob), 0.8 * (0 - win_prob))),
          away_update = ifelse(pd<0, 0.8 * (1 - win_prob), 
@@ -134,58 +127,69 @@ schedule0 <- schedule |>
                            ifelse(pd==0, 0, -1 * log((-1*pd) + 1)/25)),
          away_mov = ifelse(pd<0, log((-1 * pd) + 1)/25, 
                            ifelse(pd==0, 0, -1 * log(pd + 1)/25)),
-         HNR = home_rating + home_update + home_mov,
-         HNR = ifelse(is.na(HNR), home_rating, HNR),
-         ANR = away_rating + away_update + away_mov,
-         ANR = ifelse(is.na(ANR), away_rating, ANR),
-         predict2 = HNR - ANR + HFA,
-         predict2 = plyr::round_any(predict2, 0.1)) |>
-  filter(week!=3) |>
+         HNR = home_update + home_mov,
+         HNR = ifelse(is.na(HNR), 0, HNR),
+         ANR = away_update + away_mov,
+         ANR = ifelse(is.na(ANR), 0, ANR)) |>
+  # filter(week!=3) |>
   select(season, week, home_team, home_score, away_team, away_score, spread_line, home_rating, away_rating, 
-         HFA, predict, pd, dif, e_outcome, home_update, away_update, home_mov, away_mov, HNR, ANR) |>
+         HFA, pd, home_update, away_update, home_mov, away_mov, HNR, ANR) |>
   distinct()
 
+home0 <- schedule0 |>
+  select(season, week, team = home_team, rating = home_rating, new_rating = HNR)
 
-#Week 2 Predictions
-home1 <- schedule0 |>
-  filter(week==2) |>
-  select(team = home_team, new_rating = HNR)
+away0 <- schedule0 |>
+  select(season, week, team = away_team, rating = away_rating, new_rating = ANR)
 
-away1 <- schedule0 |>
-  filter(week==2) |>
-  select(team = away_team, new_rating = ANR)
-
+#projection for week 3
 szn0 <- szn |>
   filter(week==3)
 
-wk1 <- home1 |>
-  rbind(away1) |>
-  left_join(szn0, by = c("team")) 
+wk0 <- home0 |>
+  rbind(away0) |>
+  #change this for start time on updating, rating for week 2 reflects week one's performance
+  mutate(new_rating = ifelse(week == 2, rating + new_rating, new_rating)) |>
+  arrange(week) |>
+  group_by(team) |>
+  mutate(adj_rating = cumsum(new_rating)) |>
+  ungroup() |>
+  #projection for week 3, current week - 1
+  filter(week == 2) |>
+  select(team, adj_rating) |>
+  left_join(szn0, by = c("team"))
 
 schedule1 <- schedule |>
+  #projection for week 3
   filter(week == 3) |>
   select(season, week, home_team, home_score, away_team, away_score, spread_line, home_spread_odds, away_spread_odds) |>
-  left_join(wk1, by = c("home_team" = "team")) |>
-  rename(home_rating = rating, home_rating2 = new_rating, HFA = b_home) |>
-  left_join(wk1, by = c("away_team" = "team")) |>
+  left_join(wk0, by = c("home_team" = "team")) |>
+  rename(home_rating = rating, home_rating2 = adj_rating, HFA = b_home) |>
+  left_join(wk0, by = c("away_team" = "team")) |>
   select(-c(b_home)) |>
-  rename(away_rating = rating, away_rating2 = new_rating) |>
+  rename(away_rating = rating, away_rating2 = adj_rating) |>
   distinct() |>
   select(season, week, home_team, home_score, away_team, away_score, spread_line, home_rating, away_rating, 
          home_rating2, away_rating2, HFA) |>
   mutate(win_prob = 1/(1 + 10^(-spread_line/16)),
+         point_dif = home_score - away_score,
          predict = home_rating - away_rating + HFA,
          predict = plyr::round_any(predict, 0.1),
          predict2 = home_rating2 - away_rating2 + HFA,
          predict2 = plyr::round_any(predict2, 0.1),
          dif = predict - spread_line,
          dif2 = predict2 - spread_line,
-         e_outcome = ifelse(predict>spread_line & spread_line>0, "FAVORITE", 
+         ER_outcome = ifelse(predict>spread_line & spread_line>0, "FAVORITE", 
                             ifelse(predict>spread_line & spread_line<0, "UNDERDOG", 
                                    ifelse(predict<spread_line & spread_line>0, "UNDERDOG", "FAVORITE"))),
+         EU_outcome = ifelse(predict2>spread_line & spread_line>0, "FAVORITE", 
+                             ifelse(predict2>spread_line & spread_line<0, "UNDERDOG", 
+                                    ifelse(predict2<spread_line & spread_line>0, "UNDERDOG", "FAVORITE"))),
          spread_line = -1 * spread_line,
-         predict = -1 * predict) |>
-  select(-c(home_rating2, away_rating2, predict2, dif2))
+         predict = -1 * predict,
+         predict2 = -1 * predict2) |>
+  select(home_team, away_team, point_dif, spread_line, rating_dif = predict, home_rating, away_rating, ER_outcome,
+         home_update = home_rating2, away_update = away_rating2, update_dif = predict2, EU_outcome)
 
 
 #Week 2 Predictions
@@ -211,18 +215,18 @@ nfl2 <- szn1 |>
   rename(rank2 = rank, dif_rank2 = dif_rank, team2 = team, rating2 = rating) |>
   mutate(ID = row_number())
 
-wk0 <- merge(nfl1, nfl2, by = c('ID'))
+wk1 <- merge(nfl1, nfl2, by = c('ID'))
 
 rm(nfl1, nfl2)
 
-wk0 <- wk0 |>
+wk1 <- wk1 |>
   select(-c(ID))
 
 library(gt)
 library(gtExtras)
 library(nflplotR)
 
-wk0 |>
+wk1 |>
   gt::gt() |>
   tab_header(title = md("**NFL Team Ratings going into Week 3**"),
              subtitle = "Team, quarterback and health factors are considered") |>
@@ -247,8 +251,6 @@ wk0 |>
   tab_style(style = cell_text(font = c(google_font(name = "Times"),
                                        default_fonts())), locations = cells_body(columns = everything())) |>
   nflplotR::gt_nfl_wordmarks(columns = gt::starts_with("team")) |>
-  # text_transform(locations = cells_body(c(team, team2)),
-  #                fn = function(x) web_image(url = paste0("https://a.espncdn.com/i/teamlogos/nfl/500/", x, ".png"))) |>
   cols_width(c(team, team2) ~ px(175)) |>
   cols_width(c(rank, rank2) ~ px(45)) |>
   tab_style(style = list(cell_borders(sides = "bottom", color = "black", weight = px(3))),
@@ -261,5 +263,5 @@ wk0 |>
   gt_fa_rank_change(column = dif_rank2, font_color = "match") |>
   tab_source_note(source_note = md("**Data**: @SICscore & @FiveThirtyEight | **Table**: @PattonAnalytics")) |>
   tab_options(data_row.padding = px(0.5), source_notes.font.size = 10) |>
-  gtsave(filename = "Homefield/wk2_rating.png")
+  gtsave(filename = "Homefield/wk3_rating.png")
   
