@@ -53,7 +53,8 @@ epa <- home |>
   filter(week!=17) |>
   mutate(season = ifelse(season==2022, 2023, 2023),
          week = ifelse(week==1, 2, 
-                       ifelse(week==2, 3, 1)),
+                       ifelse(week==2, 3, 
+                              ifelse(week==3, 4, 1))),
          team_grade = ifelse(week==1, team_grade/3, team_grade)) |>
   select(season, week, team = team1, team_grade)
 
@@ -77,8 +78,9 @@ qb0 <- qb1 |>
   rbind(qb2) |>
   mutate(qb_grade = (qb1_value_pre - mean(qb1_value_pre))/sd(qb1_value_pre)) |>
   filter(date > "2023-09-06") |>
-  mutate(week = ifelse(date > "2023-09-20", 3, 
-                       ifelse(date > "2023-09-13", 2, 1))) |>
+  mutate(week = ifelse(date > "2023-09-27", 4, 
+                       ifelse(date > "2023-09-20", 3, 
+                              ifelse(date > "2023-09-13", 2, 1)))) |>
   select(season, week, team = team1, qb_grade)
 
 #Health Data
@@ -92,7 +94,7 @@ health <- health21_22 |>
   mutate(health_grade = (SIC - mean(SIC))/sd(SIC)) |>
   arrange(season, week) |>
   group_by(team) |>
-  slice(n() - 2, n() - 1, n()) |>
+  slice(n() - 3, n() - 2, n() - 1, n()) |>
   ungroup() |>
   select(season, week, team, health_grade)
 
@@ -109,7 +111,7 @@ szn <- szn23 |>
   
 schedule <- nflreadr::load_schedules(seasons = 2023)
 schedule0 <- schedule |>
-  filter(week %in% c(1:3)) |>
+  filter(week %in% c(1:4)) |>
   select(season, week, home_team, home_score, away_team, away_score, spread_line, home_spread_odds, away_spread_odds) |>
   left_join(szn, by = c("season", "week", "home_team" = "team")) |>
   rename(home_rating = rating, HFA = b_home) |>
@@ -142,26 +144,26 @@ home0 <- schedule0 |>
 away0 <- schedule0 |>
   select(season, week, team = away_team, rating = away_rating, new_rating = ANR)
 
-#projection for week 3
+#projection for week 4
 szn0 <- szn |>
-  filter(week==3)
+  filter(week==4)
 
 wk0 <- home0 |>
   rbind(away0) |>
   #change this for start time on updating, rating for week 2 reflects week one's performance
-  mutate(new_rating = ifelse(week == 2, rating + new_rating, new_rating)) |>
+  mutate(new_rating = ifelse(week == 3, rating + new_rating, new_rating)) |>
   arrange(week) |>
   group_by(team) |>
   mutate(adj_rating = cumsum(new_rating)) |>
   ungroup() |>
-  #projection for week 3, current week - 1
-  filter(week == 2) |>
+  #projection for week 4, current week - 1
+  filter(week == 3) |>
   select(team, adj_rating) |>
   left_join(szn0, by = c("team"))
 
 schedule1 <- schedule |>
-  #projection for week 3
-  filter(week == 3) |>
+  #projection for week 4
+  filter(week == 4) |>
   select(season, week, home_team, home_score, away_team, away_score, spread_line, home_spread_odds, away_spread_odds) |>
   left_join(wk0, by = c("home_team" = "team")) |>
   rename(home_rating = rating, home_rating2 = adj_rating, HFA = b_home) |>
@@ -192,7 +194,7 @@ schedule1 <- schedule |>
          home_update = home_rating2, away_update = away_rating2, update_dif = predict2, EU_outcome)
 
 
-#Week 2 Predictions
+#Weekly Predictions
 szn1 <- szn23 |>
   select(season, week, team, rating) |>
   arrange(-rating) |>
@@ -203,7 +205,7 @@ szn1 <- szn23 |>
   group_by(team) |>
   mutate(dif_rank = lag(rank) - rank) |>
   ungroup() |>
-  filter(week==3) |>
+  filter(week==4) |>
   select(rank, dif_rank, team, rating)
 
 nfl1 <- szn1 |>
@@ -228,7 +230,7 @@ library(nflplotR)
 
 wk1 |>
   gt::gt() |>
-  tab_header(title = md("**NFL Team Ratings going into Week 3**"),
+  tab_header(title = md("**NFL Team Ratings going into Week 4**"),
              subtitle = "Team, quarterback and health factors are considered") |>
   cols_label(
     rank = md(""),
@@ -263,5 +265,5 @@ wk1 |>
   gt_fa_rank_change(column = dif_rank2, font_color = "match") |>
   tab_source_note(source_note = md("**Data**: @SICscore & @FiveThirtyEight | **Table**: @PattonAnalytics")) |>
   tab_options(data_row.padding = px(0.5), source_notes.font.size = 10) |>
-  gtsave(filename = "Homefield/wk3_rating.png")
+  gtsave(filename = "Homefield/wk4_rating.png")
   
